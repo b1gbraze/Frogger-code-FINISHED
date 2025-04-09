@@ -1,0 +1,229 @@
+import pygame
+import random
+from sys import exit
+
+pygame.init()
+
+# Game setup
+WIDTH, HEIGHT = 1000, 800
+FPS = 60
+BLACK = (0, 0, 0)
+border_thickness = 10
+player_width, player_height = 50, 50
+
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Frogger")
+clock = pygame.time.Clock()
+
+# Load images
+player_idle_img = pygame.transform.scale(pygame.image.load("frogidle.png"), (player_width, player_height))
+player_jump_img = pygame.transform.scale(pygame.image.load("frogjump.png"), (player_width, player_height))
+coin_img = pygame.transform.scale(pygame.image.load("coin.png"), (50, 50))
+road_img = pygame.transform.scale(pygame.image.load("road.png"), (1000, 50))
+grass_img = pygame.transform.scale(pygame.image.load("pixelated grass.png"), (1000, 50))
+water_img = pygame.transform.scale(pygame.image.load("water.png"), (1000, 50))
+wood_img = pygame.transform.scale(pygame.image.load("wood.png"), (150, 50))
+car1_img = pygame.transform.scale(pygame.image.load("car.png"), (80, 50))
+car2_img = pygame.transform.scale(pygame.image.load("car.jpg"), (80, 50))
+
+font = pygame.font.SysFont('comicsansms', 36)
+
+# Score, lives, timer
+score = 0
+high_score = 0
+lives = 3
+start_ticks = pygame.time.get_ticks()
+total_time = 60
+
+# FROG (only class used)
+class Frog:
+    def __init__(self):
+        self.x = WIDTH // 2
+        self.y = HEIGHT - 60
+        self.speed = 5
+        self.is_jumping = False
+        self.on_log = False
+        self.log_speed = 0  # Used to track the log's speed when frog is on one
+
+    def move(self, keys):
+        if keys[pygame.K_UP]:
+            self.y -= self.speed
+            self.is_jumping = True
+        elif keys[pygame.K_DOWN]:
+            self.y += self.speed
+            self.is_jumping = True
+        elif keys[pygame.K_LEFT]:
+            self.x -= self.speed
+            self.is_jumping = True
+        elif keys[pygame.K_RIGHT]:
+            self.x += self.speed
+            self.is_jumping = True
+        else:
+            self.is_jumping = False
+
+        # Update frog's position based on log's speed if it is on a log
+        if self.on_log:
+            self.x += self.log_speed
+
+        # Ensure frog stays within bounds
+        self.x = max(border_thickness, min(WIDTH - player_width - border_thickness, self.x))
+        self.y = max(border_thickness, min(HEIGHT - player_height - border_thickness, self.y))
+
+    def draw(self, surf):
+        img = player_jump_img if self.is_jumping else player_idle_img
+        surf.blit(img, (self.x, self.y))
+
+    def rect(self):
+        return pygame.Rect(self.x, self.y, player_width, player_height)
+
+    def reset(self):
+        self.x = WIDTH // 2
+        self.y = HEIGHT - 60
+        self.on_log = False
+        self.log_speed = 0
+
+frog = Frog()
+
+# Cars
+cars = [
+    {"x": 100, "y": 600, "speed": 5, "img": car1_img},
+    {"x": 300, "y": 600, "speed": 4, "img": car2_img},
+    {"x": 500, "y": 650, "speed": 6, "img": car1_img}
+]
+
+def update_cars():
+    for car in cars:
+        car["x"] += car["speed"]
+        if car["x"] > WIDTH:
+            car["x"] = -80
+        screen.blit(car["img"], (car["x"], car["y"]))
+
+def get_car_rects():
+    return [pygame.Rect(car["x"], car["y"], 80, 50) for car in cars]
+
+# Logs (LEFT to RIGHT, start off screen, placed closer together)
+logs = [
+    {"x": -300, "y": 200, "speed": 3},
+    {"x": -500, "y": 250, "speed": 2},
+    {"x": -700, "y": 200, "speed": 4},
+    {"x": -900, "y": 250, "speed": 3}
+]
+
+def update_logs():
+    frog_on_log = False
+    for log in logs:
+        log["x"] += log["speed"]
+        if log["x"] > WIDTH:
+            log["x"] = -150
+        screen.blit(wood_img, (log["x"], log["y"]))
+
+        # Check if frog is on this log
+        log_rect = pygame.Rect(log["x"], log["y"], 150, 50)
+        if frog.rect().colliderect(log_rect):
+            frog.on_log = True
+            frog.log_speed = log["speed"]
+            frog_on_log = True
+
+    # If frog is in water area and NOT on log, it drowns
+    if 200 <= frog.y <= 300 and not frog_on_log:
+        global lives, score, high_score, start_ticks
+        lives -= 1
+        if score > high_score:
+            high_score = score
+        frog.reset()
+        score = 0
+        start_ticks = pygame.time.get_ticks()
+        pygame.time.delay(500)
+
+def get_log_rects():
+    return [pygame.Rect(log["x"], log["y"], 150, 50) for log in logs]
+
+# Coins (randomly positioned)
+coins = [
+    {"x": random.randint(0, WIDTH - 50), "y": random.randint(100, HEIGHT - 150), "img": coin_img}
+    for _ in range(5)  # Create 5 coins
+]
+
+def update_coins():
+    global score
+    for coin in coins:
+        screen.blit(coin["img"], (coin["x"], coin["y"]))
+        coin_rect = pygame.Rect(coin["x"], coin["y"], 50, 50)
+
+        if frog.rect().colliderect(coin_rect):
+            score += 10  # Increase score when coin is collected
+            coin["x"] = random.randint(0, WIDTH - 50)  # Move the coin to a new random position
+            coin["y"] = random.randint(100, HEIGHT - 150)
+
+# Main loop
+running = True
+while running:
+    screen.fill(BLACK)
+    keys = pygame.key.get_pressed()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    frog.move(keys)
+
+    # Background
+    screen.blit(grass_img, (0, HEIGHT - 50))
+    screen.blit(road_img, (0, 600))
+    screen.blit(road_img, (0, 650))
+    screen.blit(water_img, (0, 200))
+    screen.blit(water_img, (0, 250))
+
+    # Update world
+    update_logs()
+    update_cars()
+    update_coins()  # Update coins collection
+    frog.draw(screen)
+
+    # Collision with cars
+    for car_rect in get_car_rects():
+        if frog.rect().colliderect(car_rect):
+            lives -= 1
+            if score > high_score:
+                high_score = score
+            frog.reset()
+            score = 0
+            start_ticks = pygame.time.get_ticks()
+            pygame.time.delay(500)
+
+    # Reached goal
+    if frog.y < 100:
+        score += 1
+        frog.reset()
+        start_ticks = pygame.time.get_ticks()
+
+    # Timer
+    elapsed = (pygame.time.get_ticks() - start_ticks) // 1000
+    time_left = max(0, total_time - elapsed)
+    screen.blit(font.render(f"Time: {time_left}", True, (0, 200, 255)), (WIDTH - 200, 10))
+
+    # UI
+    screen.blit(font.render(f"Score: {score}", True, (255, 255, 255)), (10, 10))
+    screen.blit(font.render(f"High Score: {high_score}", True, (255, 255, 0)), (10, 50))
+    screen.blit(font.render(f"Lives: {lives}", True, (255, 0, 0)), (10, 90))
+
+    # Game over
+    if time_left <= 0 or lives <= 0:
+        if score > high_score:
+            high_score = score
+        screen.fill(BLACK)  # Clear the screen
+        msg = "Game Over!" if lives <= 0 else "Time's up!"
+        screen.blit(font.render(f"{msg} High Score: {high_score}", True, (255, 255, 255)), (WIDTH//2 - 150, HEIGHT//2))
+        pygame.display.update()
+        pygame.time.delay(3000)
+        running = False
+
+    # Scroll screen when frog reaches the top
+    if frog.y < 100:
+        screen.scroll(dy=-50)  # Scroll the screen by 50 pixels (this is a simple effect)
+
+    pygame.display.update()
+    clock.tick(FPS)
+
+pygame.quit()
+exit()
